@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import AssetTable, { type Asset } from "@/components/AssetTable";
 import AssetForm, { type AssetFormData } from "@/components/AssetForm";
@@ -15,39 +15,16 @@ interface AssetsProps {
   onBack: () => void;
 }
 
-export default function Assets({ pumpId, pumpName, pumpLocation = "", pumpManager = "", onBack }: AssetsProps) {
-  // todo: remove mock functionality
-  const [assets, setAssets] = useState<Asset[]>([
-    {
-      id: 1,
-      serialNumber: "SN-001",
-      assetName: "Fuel Dispenser",
-      assetNumber: "FD-2024-001",
-      barcode: "1234567890123",
-      quantity: 4,
-      units: "Units",
-      remarks: "Main dispensers",
-    },
-    {
-      id: 2,
-      serialNumber: "SN-002",
-      assetName: "Storage Tank",
-      assetNumber: "ST-2024-001",
-      barcode: "1234567890124",
-      quantity: 2,
-      units: "Units",
-      remarks: "Underground storage",
-    },
-    {
-      id: 3,
-      serialNumber: "SN-003",
-      assetName: "Fire Extinguisher",
-      assetNumber: "FE-2024-001",
-      barcode: "1234567890125",
-      quantity: 8,
-      units: "Units",
-    },
-  ]);
+export default function Assets({
+  pumpId,
+  pumpName,
+  pumpLocation = "",
+  pumpManager = "",
+  onBack,
+}: AssetsProps) {
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
 
   const [showAssetForm, setShowAssetForm] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
@@ -55,13 +32,70 @@ export default function Assets({ pumpId, pumpName, pumpLocation = "", pumpManage
   const [deletingAssetId, setDeletingAssetId] = useState<number | null>(null);
   const [scannedBarcode, setScannedBarcode] = useState("");
 
-  const handleAddAsset = (data: AssetFormData) => {
-    // todo: remove mock functionality
-    const newAsset: Asset = {
-      id: Math.max(...assets.map((a) => a.id), 0) + 1,
-      ...data,
-    };
-    setAssets([...assets, newAsset]);
+  // Fetch helpers
+  const fetchAssets = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const res = await fetch(`/api/assets/pump/${pumpId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`Failed to load assets (${res.status})`);
+
+      const data = await res.json();
+
+      // Map API rows to Asset type if field names differ
+      const mapped: Asset[] = (data as any[]).map((row) => ({
+        id: row.id,
+        serialNumber: row.serial_number,
+        assetName: row.asset_name,
+        assetNumber: row.asset_number,
+        barcode: row.barcode ?? "",
+        quantity: row.quantity ?? 0,
+        units: row.units ?? "",
+        remarks: row.remarks ?? "",
+      }));
+
+      setAssets(mapped);
+    } catch (e: any) {
+      setError(e.message || "Failed to load assets");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pumpId]);
+
+  // CRUD handlers
+  const handleAddAsset = async (data: AssetFormData) => {
+    try {
+      setError("");
+
+      const res = await fetch("/api/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          pump_id: pumpId,
+          serial_number: data.serialNumber,
+          asset_name: data.assetName,
+          asset_number: data.assetNumber,
+          barcode: data.barcode || null,
+          quantity: data.quantity,
+          units: data.units,
+          remarks: data.remarks || null,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to add asset");
+      await fetchAssets();
+    } catch (e: any) {
+      setError(e.message || "Failed to add asset");
+    }
   };
 
   const handleEditAsset = (assetId: number) => {
@@ -72,54 +106,78 @@ export default function Assets({ pumpId, pumpName, pumpLocation = "", pumpManage
     }
   };
 
-  const handleUpdateAsset = (data: AssetFormData) => {
-    if (editingAsset) {
-      // todo: remove mock functionality
-      setAssets(
-        assets.map((a) =>
-          a.id === editingAsset.id ? { ...a, ...data } : a
-        )
-      );
+  const handleUpdateAsset = async (data: AssetFormData) => {
+    if (!editingAsset) return;
+
+    try {
+      setError("");
+
+      const res = await fetch(`/api/assets/${editingAsset.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          serial_number: data.serialNumber,
+          asset_name: data.assetName,
+          asset_number: data.assetNumber,
+          barcode: data.barcode || null,
+          quantity: data.quantity,
+          units: data.units,
+          remarks: data.remarks || null,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to update asset");
       setEditingAsset(null);
+      await fetchAssets();
+    } catch (e: any) {
+      setError(e.message || "Failed to update asset");
     }
   };
 
-  const handleDeleteAsset = () => {
-    if (deletingAssetId) {
-      // todo: remove mock functionality
-      setAssets(assets.filter((a) => a.id !== deletingAssetId));
+  const handleDeleteAsset = async () => {
+    if (!deletingAssetId) return;
+
+    try {
+      setError("");
+
+      const res = await fetch(`/api/assets/${deletingAssetId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Failed to delete asset");
       setDeletingAssetId(null);
+      await fetchAssets();
+    } catch (e: any) {
+      setError(e.message || "Failed to delete asset");
     }
   };
 
-  const handleScanBarcode = () => {
-    setShowScanner(true);
-  };
+  // Barcode helpers
+  const handleScanBarcode = () => setShowScanner(true);
 
   const handleBarcodeScanned = (barcode: string) => {
     setScannedBarcode(barcode);
     setShowAssetForm(true);
   };
 
-  const handlePrint = () => {
-    console.log("Print assets list");
-    window.print();
-  };
+  // Print/export placeholders
+  const handlePrint = () => window.print();
 
   const handleExport = () => {
-    // todo: remove mock functionality
-    console.log("Export to Excel");
     alert("Excel export functionality will be implemented in the full version");
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <PrintAssets 
+    <div className="min-h-screen bg-white/60 dark:bg-black/40">
+      <PrintAssets
         pumpName={pumpName}
         location={pumpLocation}
         manager={pumpManager}
         assets={assets}
       />
+
       <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6 no-print">
         <div className="flex items-center gap-4">
           <Button
@@ -130,57 +188,73 @@ export default function Assets({ pumpId, pumpName, pumpLocation = "", pumpManage
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
+
           <div className="flex-1">
             <h1 className="text-3xl font-bold">{pumpName}</h1>
             <p className="text-muted-foreground mt-1">Asset Inventory</p>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Total Assets: <span className="font-semibold text-foreground">{assets.length}</span>
-            </p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={handlePrint}
-              data-testid="button-print-assets"
-              className="gap-2"
-            >
-              <Printer className="w-4 h-4" />
-              Print
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleExport}
-              data-testid="button-export-assets"
-              className="gap-2"
-            >
-              <FileDown className="w-4 h-4" />
-              Export
-            </Button>
-            <Button
-              onClick={() => {
-                setEditingAsset(null);
-                setScannedBarcode("");
-                setShowAssetForm(true);
-              }}
-              data-testid="button-add-asset"
-              className="gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add Asset
-            </Button>
+        <div className="rounded-lg bg-white/70 dark:bg-black/40 shadow-sm ring-1 ring-black/5 p-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Total Assets:{" "}
+                <span className="font-semibold text-foreground">
+                  {assets.length}
+                </span>
+              </p>
+              {loading && (
+                <p className="text-xs text-muted-foreground mt-1">Loading…</p>
+              )}
+              {!!error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                onClick={handlePrint}
+                data-testid="button-print-assets"
+                className="gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Print
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleExport}
+                data-testid="button-export-assets"
+                className="gap-2"
+              >
+                <FileDown className="w-4 h-4" />
+                Export
+              </Button>
+
+              <Button
+                onClick={() => {
+                  setEditingAsset(null);
+                  setScannedBarcode("");
+                  setShowAssetForm(true);
+                }}
+                data-testid="button-add-asset"
+                className="gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Add Asset
+              </Button>
+            </div>
           </div>
         </div>
 
-        <AssetTable
-          assets={assets}
-          onEdit={handleEditAsset}
-          onDelete={(id) => setDeletingAssetId(id)}
-        />
+        {/* Table panel */}
+        <div className="rounded-lg bg-white/70 dark:bg-black/40 shadow-md ring-1 ring-black/5 overflow-hidden">
+          <AssetTable
+            assets={assets}
+            onEdit={handleEditAsset}
+            onDelete={(id) => setDeletingAssetId(id)}
+          />
+        </div>
       </div>
 
       <AssetForm
@@ -196,7 +270,14 @@ export default function Assets({ pumpId, pumpName, pumpLocation = "", pumpManage
           editingAsset
             ? editingAsset
             : scannedBarcode
-            ? { barcode: scannedBarcode, serialNumber: "", assetName: "", assetNumber: "", quantity: 1, units: "Units" }
+            ? {
+                barcode: scannedBarcode,
+                serialNumber: "",
+                assetName: "",
+                assetNumber: "",
+                quantity: 1,
+                units: "Units",
+              }
             : undefined
         }
         title={editingAsset ? "Edit Asset" : "Add Asset"}

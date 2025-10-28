@@ -13,19 +13,44 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!username || !password) {
       setError("Please enter both username and password");
       return;
     }
-    setError("");
-    onLogin(username, password);
+
+    try {
+      setSubmitting(true);
+      setError("");
+
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!res.ok) {
+        const msg = (await res.json().catch(() => null))?.message || "Invalid credentials";
+        setError(msg);
+        return;
+      }
+
+      // Logged in on server; keep your existing app flow
+      onLogin(username, password);
+    } catch (err) {
+      setError("Unable to reach server. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-4 text-center pb-6">
           <div className="flex justify-center">
@@ -40,6 +65,7 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
             </CardDescription>
           </div>
         </CardHeader>
+
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
@@ -54,8 +80,10 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                 onChange={(e) => setUsername(e.target.value)}
                 data-testid="input-username"
                 className="h-10"
+                autoComplete="username"
               />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="password" className="text-sm font-medium">
                 Password
@@ -68,19 +96,23 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
                 onChange={(e) => setPassword(e.target.value)}
                 data-testid="input-password"
                 className="h-10"
+                autoComplete="current-password"
               />
             </div>
+
             {error && (
               <p className="text-sm text-destructive" data-testid="text-error">
                 {error}
               </p>
             )}
+
             <Button
               type="submit"
               className="w-full h-10"
               data-testid="button-login"
+              disabled={submitting}
             >
-              Sign In
+              {submitting ? "Signing in..." : "Sign In"}
             </Button>
           </form>
         </CardContent>

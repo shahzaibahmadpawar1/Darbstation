@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import PumpCard, { type Pump } from "@/components/PumpCard";
 import PumpForm, { type PumpFormData } from "@/components/PumpForm";
@@ -11,47 +11,68 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onViewAssets }: DashboardProps) {
-  // todo: remove mock functionality
-  const [pumps, setPumps] = useState<Pump[]>([
-    {
-      id: 1,
-      name: "Al-Kharj Station",
-      location: "Riyadh Road, Al-Kharj",
-      manager: "Ahmed Al-Rashid",
-      assetCount: 24,
-    },
-    {
-      id: 2,
-      name: "Qiddiya Station",
-      location: "Tuwaiq Road, Qiddiya",
-      manager: "Mohammed Al-Saud",
-      assetCount: 18,
-    },
-    {
-      id: 3,
-      name: "Umrah District Station",
-      location: "Makkah, Umrah District",
-      manager: "Khalid Al-Harbi",
-      assetCount: 32,
-    },
-  ]);
+  const [pumps, setPumps] = useState<Pump[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>("");
 
   const [showPumpForm, setShowPumpForm] = useState(false);
   const [editingPump, setEditingPump] = useState<Pump | null>(null);
   const [deletingPumpId, setDeletingPumpId] = useState<number | null>(null);
 
-  const handleAddPump = (data: PumpFormData) => {
-    // todo: remove mock functionality
-    const newPump: Pump = {
-      id: Math.max(...pumps.map((p) => p.id), 0) + 1,
-      name: data.name,
-      location: data.location,
-      manager: data.manager,
-      assetCount: 0,
-    };
-    setPumps([...pumps, newPump]);
+  // Helper: fetch all pumps
+  const fetchPumps = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const res = await fetch("/api/pumps", { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load pumps (${res.status})`);
+
+      const data = await res.json();
+
+      // Shape adapter if your DB columns differ
+      const normalized: Pump[] = (data as any[]).map((p) => ({
+        id: p.id,
+        name: p.name,
+        location: p.location,
+        manager: p.manager,
+        assetCount: p.asset_count ?? 0,
+      }));
+
+      setPumps(normalized);
+    } catch (e: any) {
+      setError(e.message || "Failed to load pumps");
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    fetchPumps();
+  }, []);
+
+  // Create
+  const handleAddPump = async (data: PumpFormData) => {
+    try {
+      const res = await fetch("/api/pumps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: data.name,
+          location: data.location,
+          manager: data.manager,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to add pump");
+      await fetchPumps();
+    } catch (e: any) {
+      alert(e.message || "Failed to add pump");
+    }
+  };
+
+  // Edit-open
   const handleEditPump = (pumpId: number) => {
     const pump = pumps.find((p) => p.id === pumpId);
     if (pump) {
@@ -60,42 +81,61 @@ export default function Dashboard({ onViewAssets }: DashboardProps) {
     }
   };
 
-  const handleUpdatePump = (data: PumpFormData) => {
-    if (editingPump) {
-      // todo: remove mock functionality
-      setPumps(
-        pumps.map((p) =>
-          p.id === editingPump.id
-            ? { ...p, name: data.name, location: data.location, manager: data.manager }
-            : p
-        )
-      );
+  // Update
+  const handleUpdatePump = async (data: PumpFormData) => {
+    if (!editingPump) return;
+
+    try {
+      const res = await fetch(`/api/pumps/${editingPump.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: data.name,
+          location: data.location,
+          manager: data.manager,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to update pump");
       setEditingPump(null);
+      await fetchPumps();
+    } catch (e: any) {
+      alert(e.message || "Failed to update pump");
     }
   };
 
-  const handleDeletePump = () => {
-    if (deletingPumpId) {
-      // todo: remove mock functionality
-      setPumps(pumps.filter((p) => p.id !== deletingPumpId));
+  // Delete confirm action
+  const handleDeletePump = async () => {
+    if (!deletingPumpId) return;
+
+    try {
+      const res = await fetch(`/api/pumps/${deletingPumpId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Failed to delete pump");
       setDeletingPumpId(null);
+      await fetchPumps();
+    } catch (e: any) {
+      alert(e.message || "Failed to delete pump");
     }
   };
 
+  // Print/export
   const handlePrint = () => {
-    console.log("Print pumps list");
     window.print();
   };
 
   const handleExport = () => {
-    // todo: remove mock functionality
-    console.log("Export to Excel");
     alert("Excel export functionality will be implemented in the full version");
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-white/60 dark:bg-black/40">
       <PrintPumps pumps={pumps} />
+
       <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6 no-print">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
@@ -104,6 +144,7 @@ export default function Dashboard({ onViewAssets }: DashboardProps) {
               Manage your petrol pump stations and their assets
             </p>
           </div>
+
           <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
@@ -114,6 +155,7 @@ export default function Dashboard({ onViewAssets }: DashboardProps) {
               <Printer className="w-4 h-4" />
               Print
             </Button>
+
             <Button
               variant="outline"
               onClick={handleExport}
@@ -123,6 +165,7 @@ export default function Dashboard({ onViewAssets }: DashboardProps) {
               <FileDown className="w-4 h-4" />
               Export
             </Button>
+
             <Button
               onClick={() => {
                 setEditingPump(null);
@@ -137,7 +180,11 @@ export default function Dashboard({ onViewAssets }: DashboardProps) {
           </div>
         </div>
 
-        {pumps.length === 0 ? (
+        {loading ? (
+          <div className="text-muted-foreground">Loading pumps…</div>
+        ) : error ? (
+          <div className="text-red-600">{error}</div>
+        ) : pumps.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-muted-foreground mb-4">
               No petrol pumps added yet. Click "Add Pump" to get started.
